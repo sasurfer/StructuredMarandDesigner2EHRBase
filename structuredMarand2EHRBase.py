@@ -220,50 +220,54 @@ def structlikefromflat(l):
     return l5
 
 def createnewpaths(path,lenocc,flattenedcm,cname):
-    newpaths_partials=[]
-    for l in lenocc:
-        newpaths_partials_lenocc=[]
-        pathtocheck=flatlike(l)
-        occurrence_exists=True
-        i=-1
-        while occurrence_exists:
-            i=i+1
-            p=pathtocheck+'_'+str(i)
-            found=False
-            for f in flattenedcm:
-                if f.startswith(p):
-                    logging.debug(f'{p} found in {f}')
-                    newpaths_partials_lenocc.append(p)
-                    found=True
-                    break
-            occurrence_exists=found
-        newpaths_partials.append(newpaths_partials_lenocc)
-    
-    logging.debug('NPP')
-    logging.debug(newpaths_partials)
 
-    newpathtotgarbled=getpaths(newpaths_partials)
-    logging.debug('NPG')
-    logging.debug(newpathtotgarbled)
+    if len(lenocc)==0:
+        lcname2=len(cname)+7#len=2{['}+len(cname)+2{']}+3{[0]}'
+        newpaths=[path[lcname2:]]
+    else:
+        newpaths_partials=[]
+        for l in lenocc:
+            newpaths_partials_lenocc=[]
+            pathtocheck=flatlike(l)
+            occurrence_exists=True
+            i=-1
+            while occurrence_exists:
+                i=i+1
+                p=pathtocheck+'_'+str(i)
+                found=False
+                for f in flattenedcm:
+                    if f.startswith(p):
+                        logging.debug(f'{p} found in {f}')
+                        newpaths_partials_lenocc.append(p)
+                        found=True
+                        break
+                occurrence_exists=found
+            newpaths_partials.append(newpaths_partials_lenocc)
+        
+        logging.debug('NPP')
+        logging.debug(newpaths_partials)
 
-    newpaths=[]
-    lcname=len(cname)+3
-    lcname2=len(cname)+7#len=2{['}+len(cname)+2{']}+3{[0]}'
-    logging.debug('PIECE')
-    lastnpg=structlikefromflat(newpathtotgarbled[-1])
-    lastpiecepath=path[len(lastnpg):]
-    logging.debug(f'path={path}')
-    logging.debug(f'lastnpg={lastnpg}')
-    for npg in newpathtotgarbled:
-        logging.debug(f'npg={npg}')
-        npgn=structlikefromflat(npg)
-        logging.debug(f'npgn={npgn}')
-        newpaths.append(npgn[lcname2:]+lastpiecepath)
-        logging.debug(f'npfinal={npgn[lcname2:]+lastpiecepath}')
+        newpathtotgarbled=getpaths(newpaths_partials)
+        logging.debug('NPG')
+        logging.debug(newpathtotgarbled)
 
-    logging.debug('CREATENEWPATHS')
-    logging.debug(f'path={path}')
-    logging.debug(f'newpaths={newpaths}')
+        newpaths=[]
+        lcname2=len(cname)+7#len=2{['}+len(cname)+2{']}+3{[0]}'
+        logging.debug('PIECE')
+        lastnpg=structlikefromflat(newpathtotgarbled[-1])
+        lastpiecepath=path[len(lastnpg):]
+        logging.debug(f'path={path}')
+        logging.debug(f'lastnpg={lastnpg}')
+        for npg in newpathtotgarbled:
+            logging.debug(f'npg={npg}')
+            npgn=structlikefromflat(npg)
+            logging.debug(f'npgn={npgn}')
+            newpaths.append(npgn[lcname2:]+lastpiecepath)
+            logging.debug(f'npfinal={npgn[lcname2:]+lastpiecepath}')
+
+        logging.debug('CREATENEWPATHS')
+        logging.debug(f'path={path}')
+        logging.debug(f'newpaths={newpaths}')
 
     return newpaths
 
@@ -435,9 +439,8 @@ def etinfoaddtoListDVQUANTITY(extemp):
                 mylist2.append(sel)
     return mylist2
 
-def findpathtoquantity(cE,listofq,cname):
+def findpathtoquantity(cE,listofq,cname,flattenedcm):
     ''' find path in Marand for quantity elements in list of paths and return it'''
-    lcname=len(cname)+7#len=2{['}+len(cname)+2{']}+3{[0]}'
     # with open('pippo','w') as p:
     #     json.dump(cE,p)
     #logging.debug(json_list_traverse(cE))
@@ -446,30 +449,36 @@ def findpathtoquantity(cE,listofq,cname):
         pathq=list(lc.keys())
         logging.debug(f"id={lc[pathq[0]]['id']}")
         (path,lenocc)=createpathstructured(pathq[0])
-        #logging.debug(path)
-        #logging.debug(lenocc)
-        path=path[lcname:]#remove template name
+        logging.debug('FPQ')
+        logging.debug(path)
+        logging.debug(lenocc)
+        #path=path[lcname:]#remove template name
         #logging.debug(path)
         #logging.debug(eval("cE"+path))
-        pathtoq.append(["cE"+path])
-        if len(lenocc)==0:
-            pass
-        elif len(lenocc)>1:
-            logging.debug('More than one possible occurrence in the same path. Not yet implemented')
-            logging.debug(lenocc)
-        else:
-            o=lenocc[0][lcname:]
-            logging.debug(o)
-            l=eval("len(cE"+o+")")
-            logging.debug(f'len={l}')
-            ll=len(o)
-            basepath1="cE"+path[:ll]
-            basepath2=path[ll+3:]
-            for i in range(2,l+1):
-                occpath=basepath1+'['+str(i-1)+']'+basepath2
-                logging.debug(occpath)
-                pathtoq.append([occpath])
-        
+        newpaths=createnewpaths(path,lenocc,flattenedcm,cname)
+        # pathtoq.append(["cE"+path])
+        # if len(lenocc)==0:
+        #     pass
+        # elif len(lenocc)>1:
+        #     logging.debug('More than one possible occurrence in the same path. Not yet implemented')
+        #     logging.debug(lenocc)
+        # else:
+        #     o=lenocc[0][lcname:]
+        #     logging.debug(o)
+        #     l=eval("len(cE"+o+")")
+        #     logging.debug(f'len={l}')
+        #     ll=len(o)
+        #     basepath1="cE"+path[:ll]
+        #     basepath2=path[ll+3:]
+        #     for i in range(2,l+1):
+        #         occpath=basepath1+'['+str(i-1)+']'+basepath2
+        #         logging.debug(occpath)
+        #         pathtoq.append([occpath])
+        if len(newpaths)!=0:
+            for p in newpaths:
+                pathtoq.append(["cE"+p])
+                logging.debug(f'appended [{"cE"+p}]')
+
     return pathtoq
 
 def fixes_dv_quantity(cE,webtemp,extemp,cname,flattenedcm):
@@ -490,7 +499,7 @@ def fixes_dv_quantity(cE,webtemp,extemp,cname,flattenedcm):
     #listofcoded=comparelists_WT_ET(mylistW,mylistE)
 
     #find path in Marand for the dv coded values
-    pathtoq=findpathtoquantity(cE,mylistE,cname)
+    pathtoq=findpathtoquantity(cE,mylistE,cname,flattenedcm)
     logging.debug(json.dumps(pathtoq,indent=2))
 
     logging.debug('------')
@@ -527,9 +536,9 @@ def etinfoaddtoListDVPROPORTION(extemp):
                 mylist2.append(sel)
     return mylist2
 
-def findpathtoproportion(cE,listofp,cname):
+def findpathtoproportion(cE,listofp,cname,flattenedcm):
     ''' find path in Marand for proportion elements in list of paths and return it'''
-    return findpathtoquantity(cE,listofp,cname)
+    return findpathtoquantity(cE,listofp,cname,flattenedcm)
 
 
 def fixes_dv_proportion(cE,webtemp,extemp,cname,flattenedcm):
@@ -550,7 +559,7 @@ def fixes_dv_proportion(cE,webtemp,extemp,cname,flattenedcm):
     #listofcoded=comparelists_WT_ET(mylistW,mylistE)
 
     #find path in Marand for the dv coded values
-    pathtop=findpathtoproportion(cE,mylistE,cname)
+    pathtop=findpathtoproportion(cE,mylistE,cname,flattenedcm)
     logging.debug(json.dumps(pathtop,indent=2))
 
     logging.debug('------')
@@ -607,7 +616,7 @@ def findentriesinex(extemp,entries):
     return mylist2    
 
 
-def add_language_encoding(cE,webtemp,extemp,cname):
+def add_language_encoding(cE,webtemp,extemp,cname,flattenedcm):
     #find observation,action,evaluation,admin_entry in wt
     entries=[]
     wt=webtemp['webTemplate']['tree']['children']
@@ -639,7 +648,7 @@ def add_language_encoding(cE,webtemp,extemp,cname):
     logging.debug(';;;;;;;;;;;;;;;;;;;;')
     logging.debug(mypathE)
 
-    pathtoe=findpathtoproportion(cE,mypathE,cname)
+    pathtoe=findpathtoproportion(cE,mypathE,cname,flattenedcm)
     #logging.debug(json.dumps(pathtoe,indent=2))
     for p in pathtoe:
             logging.debug('&&&&&&&&&&&&&&&&&&&&&&&&&&&&&')
@@ -680,10 +689,10 @@ def etinfoaddtoListcustom(extemp,customend):
                     mylist2.append(sel)
     return mylist2
 
-def fix_position_substituted(cE,extemp,cname):
+def fix_position_substituted(cE,extemp,cname,flattenedcm):
     mypathps=etinfoaddtoListcustom(extemp,['position_substituted'])
     logging.debug(mypathps)
-    pathtos=findpathtoproportion(cE,mypathps,cname)
+    pathtos=findpathtoproportion(cE,mypathps,cname,flattenedcm)
 
     for p in pathtos:
         logging.debug('&&&&&&&&&&&&&&&&&&&&&&&&&&&&&')
@@ -706,7 +715,7 @@ def fixes_dv_count(cE,webtemp,extemp,cname,flattenedcm):
     mylistfirsts=[m[0] for m in mylistW]
     mypathps=etinfoaddtoListcustom(extemp,mylistfirsts)
     logging.debug(mypathps)
-    pathtos=findpathtoproportion(cE,mypathps,cname)
+    pathtos=findpathtoproportion(cE,mypathps,cname,flattenedcm)
     logging.debug(pathtos)
     logging.debug(type(pathtos))
     
@@ -769,7 +778,7 @@ def main():
     logging.info(f'Template name: {cname}')
 
     #create flattened version of structured composition
-    flattenedcm=flattenpath(compMARAND)
+    flattenedcm = flattenpath(compMARAND)
     logging.debug('FLATTENED')
     for fl in flattenedcm:
         logging.debug(fl)
@@ -825,7 +834,7 @@ def main():
 
     logging.info('Adding Language and encoding to all entries (i.e. OBSERVATION, ACTION, EVALUATION, ADMIN_ENTRY)')
     print('Adding Language and encoding to all entries (i.e. OBSERVATION, ACTION, EVALUATION, ADMIN_ENTRY)')
-    add_language_encoding(comp,webtemp,extemp,cname)
+    add_language_encoding(comp,webtemp,extemp,cname,flattenedcm)
 
     #assign temp composition to EHRBase composition
     compEHRBase[cname]=comp

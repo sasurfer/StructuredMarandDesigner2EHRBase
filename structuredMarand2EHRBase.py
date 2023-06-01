@@ -2,6 +2,8 @@ import json
 import logging,argparse
 from flatten_json import flatten
 import re
+from terminology import openterm
+import random
 
 
 def get_composition_name(cM):
@@ -85,7 +87,9 @@ def wtinfoaddtoList(mylist,elements,rmtypeobj,compulsory=False):
         eid=el['id']
         aqlpath=el['aqlPath']
         rmtype=el['rmType']
-        if 'content' in aqlpath and rmtype==rmtypeobj:
+        dvintervalcondition= rmtypeobj=='DV_INTERVAL' and rmtype.startswith(rmtypeobj)
+        logging.debug(f'eid={eid} rmtype={rmtype} dvintervalcondition={dvintervalcondition} rmtypeobj={rmtypeobj}')
+        if 'content' in aqlpath and (rmtype==rmtypeobj or dvintervalcondition):
             if 'inputs' in el:
                 inputs=el['inputs']
             else:
@@ -122,6 +126,19 @@ def etinfoaddtoListDVCODEDTEXT(extemp):
                 mylist2.append(sel)
     return mylist2
 
+def lookforlist(w):
+    '''create the list of admissable code/value for a given element whose list is not defined in the webtemplate'''
+    if 'ism_transition' in w[1]:
+        if w[0]=='transition':
+            advalues=[]
+            for it in openterm['instruction_transitions']:
+                value=it['id']
+                label=it['rubric']
+                advalues.append({'label': label, 'localizedLabels': {'en': label}, 'value': value})
+            w[3]=[{'list': advalues, 'suffix': 'code', 'terminology': 'openehr', 'type': 'CODED_TEXT'}]
+            return True
+    return False
+
 def comparelists_WT_ET_DVCODEDTEXT(mylistW,mylistE):
     '''compare and merge the lists of dv_coded_text elements made from webtemplate and example composition from template
     output: list with id,possiblevalues,[match_indicator,pathfromExample]'''
@@ -129,6 +146,14 @@ def comparelists_WT_ET_DVCODEDTEXT(mylistW,mylistE):
     for w in mylistW:
         idw=w[0]
         pw=w[1]
+        logging.debug(f'w={w}')
+        logging.debug(w[3])
+        if not 'list' in w[3][0]:
+            logging.debug(f'Creating a list for {w[0]} if possible')
+            outcome=lookforlist(w)
+            logging.debug(f'list transition added w={w}')
+            if not outcome:
+                logging.error(f"Couldn't find any list of allowed codes/values for w={w}")
         nvalues=len(w[3][0]['list'])
         values=[{'code':w[3][0]['list'][i]['value'],'value':w[3][0]['list'][i]['label'],
                  'terminology':w[3][0]['terminology']} for i in range(nvalues)]
@@ -208,7 +233,7 @@ def createpathstructured(pathflat):
 
 def flatlike(l):
     l2=l.replace('_','@')
-    l3=re.sub(r"\[\'(\D*)\'\]",r"\g<1>",l2,re.MULTILINE)
+    l3=re.sub(r"\[\'(\D+\d*)\'\]",r"\g<1>",l2,re.MULTILINE)
     l4=re.sub(r"\[(\d)\]",r"_\g<1>_",l3,re.MULTILINE)
     return l4
 
@@ -227,6 +252,7 @@ def createnewpaths(path,lenocc,flattenedcm,cname):
     else:
         newpaths_partials=[]
         for l in lenocc:
+            logging.debug(f'lenocc={l}')
             newpaths_partials_lenocc=[]
             pathtocheck=flatlike(l)
             occurrence_exists=True
@@ -234,6 +260,7 @@ def createnewpaths(path,lenocc,flattenedcm,cname):
             while occurrence_exists:
                 i=i+1
                 p=pathtocheck+'_'+str(i)
+                logging.debug(f'looking for {p}')
                 found=False
                 for f in flattenedcm:
                     if f.startswith(p):
@@ -322,7 +349,8 @@ def findpathtocoded(cE,listofcoded,cname,flattenedcm):
         (path,lenocc)=createpathstructured(lc[2][0][1])
         logging.debug('FINDPATHTOCODED')
         for l in lenocc:
-            logging.debug(flatlike(l))
+            logging.debug(f'original l={l}')
+            logging.debug(f'flatlike l={flatlike(l)}')
         #logging.debug(path)
         #logging.debug(lenocc)
         #path=path[lcname:]#remove template name
@@ -401,8 +429,11 @@ def fixes_dv_coded_text(cE,webtemp,extemp,cname,flattenedcm):
             codepresent=cpresent['|code']
             valuepresent='Not found'
             logging.debug(f'code={codepresent}')
+            cc=False
             for cv in p[1]:
                 if 'code' in cv:
+                    cc=True
+                    ff=False
                     if cv['code']==codepresent:
                         valuepresent=cv['value']
                         logging.debug(f'=>value={valuepresent}')
@@ -411,7 +442,20 @@ def fixes_dv_coded_text(cE,webtemp,extemp,cname,flattenedcm):
                         if 'terminology' in cv:
                             cpresent['|terminology']=cv['terminology']
                             logging.debug(f"=>{eval(p[0])[0]['|terminology']}")
+                        ff=True
                         break
+            if cc:
+                if not ff: #code present in webtemplate but coded element not among allowed ones
+                    maxl=len(p[1])
+                    chosen=random.randint(0,maxl-1)
+                    if "['ism_transition'][0]['transition']" in p[0]:
+                        chosen=14
+                    cpresent['|code']=p[1][chosen]['code']
+                    cpresent['|value']=p[1][chosen]['value']
+                    if 'terminology' in p[1][chosen]:
+                            cpresent['|terminology']=p[1][chosen]['terminology']
+                    logging.debug(f"code present in webtemplate but coded element not among allowed ones {p[0]}\n added {cpresent}")
+
         elif '|other' in cpresent:
             logging.debug('other present')
             if 'other' in p[1][-1]:
@@ -597,7 +641,7 @@ def findentriesinex(extemp,entries):
         for k in extemp:
             if  not found:
                 ksplit=k.split('/')
-                if e in ksplit and not ':1' in k and not ':2' in k and not ':3' in k:
+                if e in ksplit and not ':1' in k and not ':2' in k and not ':3' in k and not ':4' in k and not ':5' in k and not ':6' in k and not ':7' in k:
                     logging.debug(f'k={k}**************')
                     kindex=ksplit.index(e)
                     kpath='/'.join(ksplit[:kindex+1])
@@ -615,44 +659,83 @@ def findentriesinex(extemp,entries):
                     found=True
     return mylist2    
 
+def addentriesfromex(extemp,mypathE):
+    mylist=[]
+
+    for m in mypathE:
+        logging.debug(f'mypathE first {m}')
+        break
+
+    for k in extemp:
+        if k.endswith('/language|code') and len(k.split('/'))>2:
+            logging.debug(f'kkkkkkkkkkk={k}')
+            lastslash=k.rfind('/')
+            path=k[:lastslash]
+            # found=False
+            # for l in mypathE:
+            #     logging.debug(f'l={l} path={path}')
+            #     if l==path:
+            #         found=True
+            #         break
+            # if not found:  
+            llast=k.rfind('/',1,lastslash)
+            id=k[llast+1:lastslash]
+            if id[-2]==':':
+                id=id[:-2]
+            el={}
+            sel={}
+            el['id']=id
+            sel[path]=el
+            mylist.append(sel)
+    return mylist  
 
 def add_language_encoding(cE,webtemp,extemp,cname,flattenedcm):
     #find observation,action,evaluation,admin_entry in wt
-    entries=[]
-    wt=webtemp['webTemplate']['tree']['children']
-    mylistW=[]
-    mylistW=wtinfoaddtoList(mylistW,wt,'OBSERVATION')
-    logging.debug(mylistW)
-    for m in mylistW:
-        entries.append(m[0])
-    mylistW=[]
-    mylistW=wtinfoaddtoList(mylistW,wt,'ACTION')
-    logging.debug(mylistW)
-    for m in mylistW:
-        entries.append(m[0])
-    mylistW=[]
-    mylistW=wtinfoaddtoList(mylistW,wt,'EVALUATION')
-    logging.debug(mylistW)
-    for m in mylistW:
-        entries.append(m[0])
-    mylistW=[]
-    mylistW=wtinfoaddtoList(mylistW,wt,'ADMIN_ENTRY')
-    logging.debug(mylistW)
-    for m in mylistW:
-        entries.append(m[0])
-    logging.debug(entries)
+    # entries=[]
+    # wt=webtemp['webTemplate']['tree']['children']
+    # mylistW=[]
+    # mylistW=wtinfoaddtoList(mylistW,wt,'OBSERVATION')
+    # logging.debug(mylistW)
+    # for m in mylistW:
+    #     entries.append(m[0])
+    # mylistW=[]
+    # mylistW=wtinfoaddtoList(mylistW,wt,'ACTION')
+    # logging.debug(mylistW)
+    # for m in mylistW:
+    #     entries.append(m[0])
+    # mylistW=[]
+    # mylistW=wtinfoaddtoList(mylistW,wt,'EVALUATION')
+    # logging.debug(mylistW)
+    # for m in mylistW:
+    #     entries.append(m[0])
+    # mylistW=[]
+    # mylistW=wtinfoaddtoList(mylistW,wt,'ADMIN_ENTRY')
+    # logging.debug(mylistW)
+    # for m in mylistW:
+    #     entries.append(m[0])
+    # logging.debug(f'entries={entries}')
     #logging.debug(len(mylistW))
 
-    #find entries in example composition
-    mypathE=findentriesinex(extemp,entries)
-    logging.debug(';;;;;;;;;;;;;;;;;;;;')
-    logging.debug(mypathE)
+
+
+    # #find entries in example composition
+    # mypathE=findentriesinex(extemp,entries)
+    # logging.debug(';;;;;;;;;;;;;;;;;;;;')
+    # logging.debug(f'mypathE={mypathE}')
+    mypathE=[]
+
+    #add language and encoding in example not considered yet
+    addede=addentriesfromex(extemp,mypathE)
+    logging.debug(f'mylist={addede}')
+
+    mypathE.extend(addede)
 
     pathtoe=findpathtoproportion(cE,mypathE,cname,flattenedcm)
+    logging.debug(f'pathtoe={pathtoe}')
     #logging.debug(json.dumps(pathtoe,indent=2))
     for p in pathtoe:
-            logging.debug('&&&&&&&&&&&&&&&&&&&&&&&&&&&&&')
-            logging.debug(p[0])
+            logging.debug('&&&&&&&&&add language encoding&&&&&&&&&&&&&&&&&&&&')
+            logging.debug(f'p[0]={p[0]}')
             #logging.debug(eval(p[0]))
             cpresent=eval(p[0])
             for c in cpresent:
@@ -732,7 +815,152 @@ def fixes_dv_count(cE,webtemp,extemp,cname,flattenedcm):
         logging.debug(id)
         cpresent[id]=[0]
         logging.debug(cpresent)
-        #logging.debug(eval(p[0]))   
+        #logging.debug(eval(p[0]))  
+        #  
+
+def convertintervalname(name):
+    return name.replace("<dv","_of").replace(">","")
+
+def fixes_dv_interval(cE,webtemp,extemp,cname,flattenedcm):
+    #find all dv_interval in webtemplate content with min>0
+    wt=webtemp['webTemplate']['tree']['children']
+    mylistW=[]
+    mylistW=wtinfoaddtoList(mylistW,wt,'DV_INTERVAL',True)
+    #logging.debug(len(mylistW))
+    logging.debug('7777777')
+    logging.debug(mylistW)
+
+    conversions=[]
+    for m in mylistW:
+        converted=convertintervalname(m[0])
+        conversions.append([converted,m[0]])
+
+    for c in conversions:
+        fc0=flatlike(c[0])
+        for f in flattenedcm:
+            if fc0 in f:
+                myindex=f.find(fc0)
+                l=len(fc0)
+                logging.debug(f'f={f}')
+                pathbefore=structlikefromflat(f[len(cname)+3:myindex-1])
+                cpresent=eval("cE"+pathbefore)
+                if c[0] in cpresent: #not yet corrected
+                    value=eval("cE"+pathbefore+"['"+c[0]+"']")
+                    logging.debug(f'8888 pathbefore={pathbefore} value={value} c[1]={c[1]}')
+                    cpresent[c[1]]=value
+                    logging.debug(f' cpresent={cpresent}')
+                    cpresent.pop(c[0])
+                    logging.debug(f'final cpresent={cpresent}')
+
+def fixes_dv_boolean(cE,webtemp,extemp,cname,flattenedcm):
+    #find all dv_boolean in webtemplate content with min>0 and add them to the composition
+    wt=webtemp['webTemplate']['tree']['children']
+    mylistW=[]
+    mylistW=wtinfoaddtoList(mylistW,wt,'DV_BOOLEAN',True)
+    #logging.debug(len(mylistW))
+    logging.debug('999')
+    logging.debug(mylistW)
+
+    mybooleans=[]
+    for m in mylistW:
+        for e in extemp:
+            if m[0] in e and ':1' not in e and ':2' not in e and ':3' not in e:
+                mybooleans.append(e)
+    
+    logging.debug(f'mybooleans={mybooleans}')
+    pathstob=[]
+    for mb in mybooleans:
+        (path,lenocc)=createpathstructured(mb)
+        logging.debug('FINDPATHTOBOOLEANS')
+        for l in lenocc:
+            logging.debug(f'original l={l}')
+            logging.debug(f'flatlike l={flatlike(l)}')
+        #logging.debug(path)
+        #logging.debug(lenocc)
+        #path=path[lcname:]#remove template name
+        logging.debug(f'path={path} lenocc={lenocc}')
+        #logging.debug(f'path[lcname:]={path[lcname:]}')
+        newpaths=createnewpaths(path,lenocc,flattenedcm,cname)
+        logging.debug(f'newpaths={newpaths}')
+        if len(newpaths)!=0:
+            for p in newpaths:
+                pathstob.append(["cE"+p])
+                logging.debug(f'appended [{"cE"+p}]')
+    
+    for ptb in pathstob:
+        logging.debug(f'ptb={ptb}')
+        for p in ptb:
+            commitptb(cE,p,False)
+        #false
+
+def commitptb(cE,pathtobecommitted,value):
+    #recreate all the path when needed till the last element where the value is inserted
+# ["cE['histopathology'][0]['result_group'][0]['laboratory_test_result'][0]['any_event'][0]['recurrence'][0]['anatomical_pathology_finding'][0]['biological_material_from_recurrence_available']"]   
+    ptbs=pathtobecommitted.split('[')
+    position=len(ptbs)-1
+    for i in range(3,len(ptbs)-1,2):
+        element=ptbs[i].split(']')[0].replace("'","")
+        path='['.join(ptbs[:i])
+        elbefore=eval(path)
+        logging.debug(f'i={i} element={element} path={path} elbefore={elbefore}')
+        # logging.debug(type(element),type(elbefore))
+        logging.debug(f'element in elbefore={element in elbefore}')
+        logging.debug(f'element in keys={element in elbefore.keys()}')
+        logging.debug(f'elbeforekeys={elbefore.keys()}')
+        for ek in list(elbefore.keys()):
+            logging.debug(f'ek={ek} element={element}')
+        if not (element in elbefore):
+            logging.debug(f'element not in elbefore position={i}')
+            logging.debug(f'element={element} elbefore={elbefore}')
+            logging.debug(elbefore.keys())
+            position=i
+            logging.debug(f'position={position}')
+            break
+    #return position
+    #cE['histopathology'][0]['result_group'][0]['laboratory_test_result'][0]['any_event'][0]['recurrence'][0]['anatomical_pathology_finding'][0]['biological_material_from_recurrence_available']
+    #'cE', "'histopathology']", '0]', 
+    # "'result_group']", '0]', 
+    # "'laboratory_test_result']", '0]', 
+    # "'any_event']", '0]', 
+    # "'recurrence']", '0]', 
+    # "'anatomical_pathology_finding']", '0]', 
+    # "'biological_material_from_recurrence_available']"]
+    #ce={'histopathology':[{'result_group':[{'laboratory_test_result':[{'any_event':[{'recurrence':[{'anatomical_pathology_finding':[{biological_material_from_recurrence_available':'pippo'}]}]}]}]}]}]}
+    #cp=[{'laboratory_test_result': [{'any_event': [{'recurrence': [{'anatomical_pathology_finding': [{'biological_material_from_recurrence_available': 'pippo'}]}]}]}]}]
+
+    if position != len(ptbs)-1:
+        for i in range(len(ptbs)-1,position+2,-1):      
+                element=ptbs[i].split(']')[0]
+                logging.debug(f'i={i} element={element}')
+                if "'" in element:
+                    element=element.replace("'","")
+                    if i==len(ptbs)-1:
+                        cp={}
+                        cp[element]=value
+                        logging.DEBUG(f'cp={cp}')
+                    else:
+                        newcp={}
+                        newcp[element]=cp
+                        cp=newcp
+                        logging.debug(f'cp={cp}')
+                else:
+                    newcp=[]
+                    newcp.append(cp)
+                    cp=newcp
+                    logging.debug(f'cp={cp}')
+        pathbef="[".join(ptbs[:position])
+        ep=eval(pathbef)
+        mykey=ptbs[position].split(']')[0].replace("'","")
+        ep[mykey]=cp
+        logging.debug(f'ep={ep} mykey={mykey} ep[mykey]={ep[mykey]}')
+    else:
+        pathbef="[".join(ptbs[:position])
+        ep=eval(pathbef)
+        mykey=ptbs[position].split(']')[0].replace("'","")
+        ep[mykey]=value
+        logging.debug(f'ep={ep} mykey={mykey} ep[mykey]={ep[mykey]}')
+        logging.debug(cE)
+
 
 def readcomp(inputfile):
     with open(inputfile) as snv:
@@ -831,6 +1059,14 @@ def main():
     logging.info('Fixing DV_COUNT leafs')
     print('Fixing DV_COUNT leafs')
     fixes_dv_count(comp,webtemp,extemp,cname,flattenedcm)
+
+    logging.info('Fixing DV_INTERVAL leafs')
+    print('Fixing DV_INTERVAL leafs')
+    fixes_dv_interval(comp,webtemp,extemp,cname,flattenedcm)
+
+    logging.info('Fixing DV_BOOLEAN leafs. Boolean are lost during export of forms!!!!')
+    print('Fixing DV_BOOLEAN leafs')
+    fixes_dv_boolean(comp,webtemp,extemp,cname,flattenedcm)
 
     logging.info('Adding Language and encoding to all entries (i.e. OBSERVATION, ACTION, EVALUATION, ADMIN_ENTRY)')
     print('Adding Language and encoding to all entries (i.e. OBSERVATION, ACTION, EVALUATION, ADMIN_ENTRY)')
